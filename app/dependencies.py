@@ -1,9 +1,9 @@
 from typing import AsyncGenerator
-from app.db.session import SessionLocal
+from app.db.session import AsyncSessionLocal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with SessionLocal() as session:
+    async with AsyncSessionLocal() as session:
         try:
             yield session
             await session.commit()
