@@ -12,5 +12,6 @@ redis
 python-multipart
 python-jose[cryptography]
 cryptography
+passlib
 pytest
 pytest-asyncio
