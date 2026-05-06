@@ -13,5 +13,6 @@ python-multipart
 python-jose[cryptography]
 cryptography
 passlib
+structlog
 pytest
 pytest-asyncio
