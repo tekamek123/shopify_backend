@@ -1,9 +1,13 @@
 import uuid
 import time
 import structlog
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+import redis.asyncio as aioredis
 from app.config import settings
+from app.dependencies import get_db
 from app.api.v1 import auth, products, orders, analytics, webhooks
 
 # Configure Structlog
@@ -72,5 +76,29 @@ app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytic
 app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["Webhooks"])
 
 @app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+async def health_check(db: AsyncSession = Depends(get_db)):
+    health_status = {
+        "status": "healthy",
+        "database": "unhealthy",
+        "redis": "unhealthy"
+    }
+    
+    # Check Database
+    try:
+        await db.execute(text("SELECT 1"))
+        health_status["database"] = "healthy"
+    except Exception as e:
+        logger.error("health_check_db_failed", error=str(e))
+        health_status["status"] = "unhealthy"
+
+    # Check Redis
+    try:
+        redis_client = aioredis.from_url(settings.REDIS_URL)
+        await redis_client.ping()
+        await redis_client.close()
+        health_status["redis"] = "healthy"
+    except Exception as e:
+        logger.error("health_check_redis_failed", error=str(e))
+        health_status["status"] = "unhealthy"
+
+    return health_status
