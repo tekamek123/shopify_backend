@@ -1,10 +1,11 @@
+import urllib.parse
 from fastapi import APIRouter, Request, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.dependencies import get_db
 from app.services.auth_service import auth_service
-import urllib.parse
+from app.services.webhook_service import webhook_service
 
 router = APIRouter()
 
@@ -13,7 +14,6 @@ async def install(shop: str = Query(...)):
     """
     Step 1: Redirect to Shopify for installation.
     """
-    # Validate shop domain format
     if not shop.endswith(".myshopify.com"):
         raise HTTPException(status_code=400, detail="Invalid shop domain")
 
@@ -37,7 +37,7 @@ async def callback(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Step 2: Handle callback, verify HMAC, exchange code for token.
+    Step 2: Handle callback, verify HMAC, exchange code for token, and register webhooks.
     """
     # 1. Verify HMAC
     query_params = dict(request.query_params)
@@ -53,6 +53,9 @@ async def callback(
     # 3. Save merchant to DB
     await auth_service.save_merchant(db, shop, access_token)
 
-    # 4. Redirect to frontend or Shopify Admin
-    # For now, we'll just redirect to the Shopify Admin
-    return RedirectResponse(url=f"https://{shop}/admin/apps/{settings.APP_NAME.replace(' ', '-').lower()}")
+    # 4. Register mandatory webhooks
+    await webhook_service.register_webhooks(shop, access_token)
+
+    # 5. Redirect to Shopify Admin
+    app_handle = settings.APP_NAME.replace(' ', '-').lower()
+    return RedirectResponse(url=f"https://{shop}/admin/apps/{app_handle}")
