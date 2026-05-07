@@ -9,14 +9,17 @@ from app.models.db.merchant import Merchant
 
 class AuthService:
     def __init__(self):
-        # We'll initialize Fernet only if the key is available
         self.fernet = Fernet(settings.ENCRYPTION_KEY.encode())
 
     def verify_hmac(self, query_params: dict) -> bool:
+        """
+        Verify the HMAC signature from Shopify.
+        """
         hmac_sig = query_params.get("hmac")
         if not hmac_sig:
             return False
 
+        # Remove hmac from params and sort them
         params = {k: v for k, v in query_params.items() if k != "hmac"}
         sorted_params = sorted(params.items())
         message = "&".join([f"{k}={v}" for k, v in sorted_params])
@@ -30,6 +33,9 @@ class AuthService:
         return hmac.compare_digest(hash_sig, hmac_sig)
 
     async def exchange_code_for_token(self, shop: str, code: str) -> str:
+        """
+        Exchange the temporary code for a permanent access token.
+        """
         url = f"https://{shop}/admin/oauth/access_token"
         payload = {
             "client_id": settings.SHOPIFY_API_KEY,
@@ -46,9 +52,16 @@ class AuthService:
     def encrypt_token(self, token: str) -> str:
         return self.fernet.encrypt(token.encode()).decode()
 
+    def decrypt_token(self, encrypted_token: str) -> str:
+        return self.fernet.decrypt(encrypted_token.encode()).decode()
+
     async def save_merchant(self, db: AsyncSession, shop_domain: str, access_token: str):
+        """
+        Save or update merchant details in the database.
+        """
         encrypted_token = self.encrypt_token(access_token)
         
+        # Check if merchant exists
         result = await db.execute(select(Merchant).where(Merchant.shop_domain == shop_domain))
         merchant = result.scalar_one_or_none()
 

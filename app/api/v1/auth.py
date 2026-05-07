@@ -19,7 +19,6 @@ async def install(response: Response, shop: str = Query(...)):
 
     # Generate a unique state nonce and store it in a secure cookie
     state = str(uuid.uuid4())
-    response = RedirectResponse(url="") # Placeholder, will set URL below
     
     redirect_uri = f"{settings.APP_URL}/api/v1/auth/callback"
     params = {
@@ -31,6 +30,8 @@ async def install(response: Response, shop: str = Query(...)):
     
     auth_url = f"https://{shop}/admin/oauth/authorize?{urllib.parse.urlencode(params)}"
     
+    # Set state in a secure cookie to verify in callback
+    response = RedirectResponse(url=auth_url)
     response.set_cookie(
         key="shopify_state",
         value=state,
@@ -39,8 +40,6 @@ async def install(response: Response, shop: str = Query(...)):
         samesite="lax",
         max_age=600 # 10 minutes
     )
-    response.headers["Location"] = auth_url
-    response.status_code = 307
     return response
 
 @router.get("/callback")
@@ -74,6 +73,5 @@ async def callback(
     await auth_service.save_merchant(db, shop, access_token)
 
     # 5. Redirect to app home (Shopify Admin)
-    # Removing spaces and lowercase for the handle as per Shopify convention
     app_handle = settings.APP_NAME.replace(" ", "-").lower()
     return RedirectResponse(url=f"https://{shop}/admin/apps/{app_handle}")
