@@ -1,6 +1,7 @@
 import hmac
 import hashlib
 import httpx
+from base64 import b64encode
 from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -13,14 +14,14 @@ class AuthService:
 
     def verify_hmac(self, query_params: dict) -> bool:
         """
-        Verify the HMAC signature from Shopify.
+        Verify the HMAC signature for query parameters (used in OAuth and App Proxy).
         """
         hmac_sig = query_params.get("hmac")
         if not hmac_sig:
             return False
 
         # Remove hmac from params and sort them
-        params = {k: v for k, v in query_params.items() if k != "hmac"}
+        params = {k: v for k, v in query_params.items() if k not in ["hmac", "signature"]}
         sorted_params = sorted(params.items())
         message = "&".join([f"{k}={v}" for k, v in sorted_params])
 
@@ -31,6 +32,22 @@ class AuthService:
         ).hexdigest()
 
         return hmac.compare_digest(hash_sig, hmac_sig)
+
+    def verify_webhook_hmac(self, raw_body: bytes, hmac_header: str) -> bool:
+        """
+        Verify the HMAC signature for Shopify webhooks.
+        """
+        if not hmac_header:
+            return False
+
+        hash_sig = hmac.new(
+            settings.SHOPIFY_API_SECRET.encode(),
+            raw_body,
+            hashlib.sha256
+        )
+        calculated_hmac = b64encode(hash_sig.digest()).decode()
+
+        return hmac.compare_digest(calculated_hmac, hmac_header)
 
     async def exchange_code_for_token(self, shop: str, code: str) -> str:
         """
