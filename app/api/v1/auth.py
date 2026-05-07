@@ -1,6 +1,5 @@
-import uuid
 import urllib.parse
-from fastapi import APIRouter, Query, HTTPException, Depends, Request, Response
+from fastapi import APIRouter, Request, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -8,9 +7,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.dependencies import get_db
 from app.services.auth_service import auth_service
-from app.services.token_service import token_service
-from app.models.db.merchant import Merchant
-from app.models.schemas.auth import TokenRequest, TokenResponse, RefreshRequest
+from app.services.webhook_service import webhook_service
 
 router = APIRouter()
 
@@ -19,7 +16,7 @@ async def install(response: Response, shop: str = Query(...)):
     """
     Step 1: Validate shop and redirect to Shopify OAuth with state nonce.
     """
-    if not shop or not shop.endswith(".myshopify.com"):
+    if not shop.endswith(".myshopify.com"):
         raise HTTPException(status_code=400, detail="Invalid shop domain")
 
     # Generate a unique state nonce and store it in a secure cookie
@@ -56,7 +53,7 @@ async def callback(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Step 2: Verify state, exchange code for token, and upsert Merchant.
+    Step 2: Handle callback, verify HMAC, exchange code for token, and register webhooks.
     """
     # 1. Verify state nonce from cookie
     cookie_state = request.cookies.get("shopify_state")
@@ -77,58 +74,9 @@ async def callback(
     # 4. Encrypt token and upsert Merchant record
     await auth_service.save_merchant(db, shop, access_token)
 
-    # 5. Redirect to app home (Shopify Admin)
-    app_handle = settings.APP_NAME.replace(" ", "-").lower()
+    # 4. Register mandatory webhooks
+    await webhook_service.register_webhooks(shop, access_token)
+
+    # 5. Redirect to Shopify Admin
+    app_handle = settings.APP_NAME.replace(' ', '-').lower()
     return RedirectResponse(url=f"https://{shop}/admin/apps/{app_handle}")
-
-@router.post("/token", response_model=TokenResponse)
-async def get_token(
-    data: TokenRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Issue access and refresh tokens for the Flutter app.
-    """
-    # 1. Verify merchant exists
-    result = await db.execute(select(Merchant).where(Merchant.shop_domain == data.shop))
-    merchant = result.scalar_one_or_none()
-    
-    if not merchant:
-        raise HTTPException(status_code=404, detail="Merchant not found. Please install the app first.")
-
-    # 2. Generate tokens
-    token_data = {"sub": str(merchant.id), "shop": merchant.shop_domain}
-    
-    access_token = token_service.create_access_token(token_data)
-    refresh_token = token_service.create_refresh_token(token_data)
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
-    }
-
-@router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(
-    data: RefreshRequest,
-):
-    """
-    Validate refresh token and issue a new access token.
-    """
-    # 1. Decode and validate the refresh token
-    payload = token_service.decode_token(data.refresh_token)
-    
-    if not payload or payload.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
-
-    # 2. Generate new tokens (Rotation)
-    token_data = {"sub": payload.get("sub"), "shop": payload.get("shop")}
-    
-    access_token = token_service.create_access_token(token_data)
-    refresh_token = token_service.create_refresh_token(token_data)
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
-    }
