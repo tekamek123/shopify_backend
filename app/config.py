@@ -6,7 +6,9 @@ class Settings(BaseSettings):
     SHOPIFY_API_KEY: str
     SHOPIFY_API_SECRET: str
     SHOPIFY_API_VERSION: str = "2024-04"
-    
+    SHOPIFY_SCOPES: str = "read_products,write_products,read_orders,write_orders,read_analytics"
+    APP_URL: str # The URL where the app is hosted (e.g. ngrok URL)
+
     # Database Settings
     DATABASE_URL: str
     
@@ -15,6 +17,7 @@ class Settings(BaseSettings):
     
     # Security Settings
     JWT_SECRET: str
+    ENCRYPTION_KEY: str # 32-byte key for Fernet
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
