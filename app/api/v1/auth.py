@@ -10,7 +10,7 @@ from app.dependencies import get_db
 from app.services.auth_service import auth_service
 from app.services.token_service import token_service
 from app.models.db.merchant import Merchant
-from app.models.schemas.auth import TokenRequest, TokenResponse
+from app.models.schemas.auth import TokenRequest, TokenResponse, RefreshRequest
 
 router = APIRouter()
 
@@ -98,6 +98,31 @@ async def get_token(
 
     # 2. Generate tokens
     token_data = {"sub": str(merchant.id), "shop": merchant.shop_domain}
+    
+    access_token = token_service.create_access_token(token_data)
+    refresh_token = token_service.create_refresh_token(token_data)
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token(
+    data: RefreshRequest,
+):
+    """
+    Validate refresh token and issue a new access token.
+    """
+    # 1. Decode and validate the refresh token
+    payload = token_service.decode_token(data.refresh_token)
+    
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    # 2. Generate new tokens (Rotation)
+    token_data = {"sub": payload.get("sub"), "shop": payload.get("shop")}
     
     access_token = token_service.create_access_token(token_data)
     refresh_token = token_service.create_refresh_token(token_data)
