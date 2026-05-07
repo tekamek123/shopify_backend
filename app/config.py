@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     SHOPIFY_API_KEY: str
     SHOPIFY_API_SECRET: str
     SHOPIFY_API_VERSION: str = "2024-04"
-    SHOPIFY_SCOPES: str = "read_products,write_products,read_orders,write_orders,read_analytics"
+    SHOPIFY_SCOPES: str = "read_products,write_products,read_orders,write_orders"
     APP_URL: str # The URL where the app is hosted (e.g. ngrok URL)
 
     # Database Settings
