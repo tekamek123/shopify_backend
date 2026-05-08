@@ -1,5 +1,6 @@
+import uuid
 import urllib.parse
-from fastapi import APIRouter, Request, Depends, HTTPException, Query
+from fastapi import APIRouter, Query, HTTPException, Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -8,6 +9,9 @@ from app.config import settings
 from app.dependencies import get_db
 from app.services.auth_service import auth_service
 from app.services.webhook_service import webhook_service
+from app.services.token_service import token_service
+from app.models.db.merchant import Merchant
+from app.models.schemas.auth import TokenRequest, TokenResponse, RefreshRequest
 
 router = APIRouter()
 
@@ -80,3 +84,46 @@ async def callback(
     # 5. Redirect to Shopify Admin
     app_handle = settings.APP_NAME.replace(' ', '-').lower()
     return RedirectResponse(url=f"https://{shop}/admin/apps/{app_handle}")
+
+@router.post("/token", response_model=TokenResponse)
+async def get_token(
+    data: TokenRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Issue access and refresh tokens for the Flutter app.
+    """
+    result = await db.execute(select(Merchant).where(Merchant.shop_domain == data.shop))
+    merchant = result.scalar_one_or_none()
+    
+    if not merchant:
+        raise HTTPException(status_code=404, detail="Merchant not found.")
+
+    token_data = {"sub": str(merchant.id), "shop": merchant.shop_domain}
+    access_token = token_service.create_access_token(token_data)
+    refresh_token = token_service.create_refresh_token(token_data)
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token(
+    data: RefreshRequest,
+):
+    """
+    Validate refresh token and issue a new access token.
+    """
+    payload = token_service.decode_token(data.refresh_token)
+    
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    token_data = {"sub": payload.get("sub"), "shop": payload.get("shop")}
+    return {
+        "access_token": token_service.create_access_token(token_data),
+        "refresh_token": token_service.create_refresh_token(token_data),
+        "token_type": "bearer"
+    }
